@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+*.log
+
+.env
+.venv/
+datasets/
+models/
+checkpoints/
+huggingface/
+containers/
+results/
