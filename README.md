@@ -51,6 +51,7 @@ scripts/                    experiment scripts (run through run_cpu_benchmark.sh
 scripts/exploration/        early one-off scripts
 slurm/                      batch jobs for the sweep
 results-meta/               small summary tables (committed)
+report/                     first-iteration report (LaTeX) and its figures
 $STORE/sparse-inference/
     checkpoints/<name>/     pruned models + pruning_meta.json
     results/                raw JSON/CSV results (not committed)
@@ -75,7 +76,13 @@ sbatch --dependency=afterany:$P slurm/tma.sbatch
 
 # 4. Summary tables
 python3 scripts/summarize_results.py --out results-meta
+
+# 5. Figures and report (plain python3 + matplotlib, pdflatex)
+python3 scripts/make_figures.py --meta results-meta --out report/figures
+cd report && latexmk -pdf report.tex
 ```
+
+The first-iteration report is `report/report.pdf`.
 
 Every step skips outputs that already exist (`FORCE=1` to redo).
 `SMOKE=1` runs a tiny version of each job into `$STORE/sparse-inference/smoke/`
