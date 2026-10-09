@@ -12,6 +12,13 @@ count M it times:
                                                   layout cost of csr)
     csr_random   csr on a matrix with the same shape and nnz but uniformly
                  random positions (control: effect of the pruning pattern)
+    csr_i32, csr_i32_rowmajor
+                 the same with int32 CSR indices (no per-call conversion)
+
+With --cold the weights are replicated until they exceed --cold-bytes
+(default 256 MB, > the 2 x 48 MB L3) and every call uses the next copy,
+so weights come from DRAM as in end-to-end decode. Without it a single
+matrix stays cache-resident (hot), which favours dense.
 
 M = 1 corresponds to decode, larger M to prefill with M prompt tokens.
 
@@ -21,6 +28,7 @@ same rows and the run metadata.
 
 import argparse
 import csv
+import math
 import os
 import statistics
 import time
@@ -30,6 +38,7 @@ import torch.nn.functional as F
 from transformers import AutoModelForCausalLM
 
 from analyze_sparsity_patterns import analyze_matrix, layer_type_from_name
+from bench_qwen_csr_inference import to_csr
 from result_io import read_json, write_json
 
 
@@ -75,6 +84,20 @@ def random_same_nnz(W, generator):
     return R.view_as(W)
 
 
+def cycler(items, op):
+    """
+    fn() applies op to the next item, round robin (cold-cache runs).
+    """
+    state = [0]
+
+    def fn():
+        i = state[0]
+        state[0] = (i + 1) % len(items)
+        return op(items[i])
+
+    return fn
+
+
 def layer_index(name):
     # model.layers.<idx>.<block>.<proj>
     return int(name.split(".")[2])
@@ -107,7 +130,24 @@ def main():
     parser.add_argument(
         "--variants",
         nargs="+",
-        default=["dense", "csr", "csr_rowmajor", "csr_random"],
+        default=[
+            "dense",
+            "csr",
+            "csr_rowmajor",
+            "csr_random",
+            "csr_i32",
+            "csr_i32_rowmajor",
+        ],
+    )
+    parser.add_argument(
+        "--cold",
+        action="store_true",
+        help="Cycle through weight copies larger than the L3",
+    )
+    parser.add_argument(
+        "--cold-bytes",
+        type=float,
+        default=256e6,
     )
     parser.add_argument("--warmup", type=int, default=10)
     parser.add_argument("--runs", type=int, default=50)
@@ -167,12 +207,30 @@ def main():
             nnz = int((W != 0).sum().item())
             sparsity = 1.0 - nnz / W.numel()
 
-            W_csr = W.to_sparse_csr()
-            W_rand_csr = (
-                random_same_nnz(W, generator).to_sparse_csr()
-                if "csr_random" in args.variants
-                else None
+            copies = (
+                max(1, math.ceil(args.cold_bytes / (W.numel() * W.element_size())))
+                if args.cold
+                else 1
             )
+
+            dense_copies = [W] + [W.clone() for _ in range(copies - 1)]
+
+            mats = {"dense": dense_copies}
+
+            if any(v in args.variants for v in ["csr", "csr_rowmajor"]):
+                mats["csr"] = [w.to_sparse_csr() for w in dense_copies]
+
+            if any(v.startswith("csr_i32") for v in args.variants):
+                mats["csr_i32"] = [to_csr(w, torch.int32) for w in dense_copies]
+
+            if "csr_random" in args.variants:
+                W_rand = random_same_nnz(W, generator)
+                mats["csr_random"] = [
+                    (W_rand if i == 0 else W_rand.clone()).to_sparse_csr()
+                    for i in range(copies)
+                ]
+
+            W_csr = mats.get("csr", [W.to_sparse_csr()])[0]
 
             stats = (
                 {}
@@ -185,12 +243,26 @@ def main():
                 x = torch.randn(M, in_features, generator=generator)
                 xT = x.T.contiguous()
 
+                colmajor = lambda c: torch.sparse.mm(c, x.T).T
+                rowmajor = lambda c: torch.sparse.mm(c, xT)
+
                 fns = {
-                    "dense": lambda: F.linear(x, W),
-                    "csr": lambda: torch.sparse.mm(W_csr, x.T).T,
-                    "csr_rowmajor": lambda: torch.sparse.mm(W_csr, xT),
-                    "csr_random": lambda: torch.sparse.mm(W_rand_csr, x.T).T,
+                    "dense": cycler(mats["dense"], lambda w: F.linear(x, w)),
+                    "csr": lambda: None,
+                    "csr_rowmajor": lambda: None,
+                    "csr_random": lambda: None,
+                    "csr_i32": lambda: None,
+                    "csr_i32_rowmajor": lambda: None,
                 }
+
+                if "csr" in mats:
+                    fns["csr"] = cycler(mats["csr"], colmajor)
+                    fns["csr_rowmajor"] = cycler(mats["csr"], rowmajor)
+                if "csr_i32" in mats:
+                    fns["csr_i32"] = cycler(mats["csr_i32"], colmajor)
+                    fns["csr_i32_rowmajor"] = cycler(mats["csr_i32"], rowmajor)
+                if "csr_random" in mats:
+                    fns["csr_random"] = cycler(mats["csr_random"], colmajor)
 
                 # Correctness of the CSR path on the real matrix.
                 ref = F.linear(x, W)
@@ -231,6 +303,8 @@ def main():
                             else None
                         ),
                         "csr_rel_err": rel_err,
+                        "cold": args.cold,
+                        "copies": copies,
                     }
                     row.update(stats)
                     rows.append(row)
@@ -240,7 +314,7 @@ def main():
                     for v, r in results.items()
                 )
                 print(
-                    f"[{i + 1}/{len(targets)}] {name} "
+                    f"[{i + 1}/{len(targets)}] {name} x{copies} "
                     f"s={sparsity:.3f} M={M}: {summary}"
                 )
 
@@ -261,6 +335,7 @@ def main():
         args.output,
         {
             "experiment": "layer_formats",
+            "cold": args.cold,
             "args": vars(args),
             "pruning": (
                 read_json(pruning_meta_path)

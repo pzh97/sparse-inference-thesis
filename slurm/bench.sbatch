@@ -6,6 +6,15 @@
 #
 #   sbatch --array=1-39 slurm/bench.sbatch
 #
+# Options (environment):
+#   STEPS        subset of "patterns layers e2e profile" (default: all)
+#   CSR_IMPLS    CSR implementations for e2e/profile (v0, int32, mlp_t);
+#                v0 = the 2026-10-08 sweep, output names without suffix
+#   LAYER_MODES  "hot" and/or "cold" (cold-cache per-layer benchmark)
+#   E2E_REPS     independent processes per e2e configuration (default 1;
+#                >1 adds -r<i> to the file names). Dense timings differ
+#                between processes (~400 vs ~505 ms prefill at 512).
+#
 # A whole socket is requested so that no other job shares our L3 and
 # memory bandwidth; the run itself is bound to one 16-core NUMA node.
 
@@ -56,25 +65,53 @@ step() {
   fi
 }
 
-step "$RES_ROOT/patterns/$NAME.json" \
-  $RUN scripts/analyze_sparsity_patterns.py \
-    --model-path "$CKPT" --output "$RES_ROOT/patterns/$NAME.json"
+STEPS=${STEPS:-"patterns layers e2e profile"}
+CSR_IMPLS=${CSR_IMPLS:-v0}
+LAYER_MODES=${LAYER_MODES:-hot}
 
-step "$RES_ROOT/layers/$NAME.json" \
-  $RUN scripts/bench_layer_formats.py \
-    --model-path "$CKPT" $LAYERS \
-    --csv "$RES_ROOT/layers/$NAME.csv" --output "$RES_ROOT/layers/$NAME.json"
+has_step() { [[ " $STEPS " == *" $1 "* ]]; }
 
-for TARGETS in mlp all; do
-  step "$RES_ROOT/e2e/$NAME-$TARGETS.json" \
-    $RUN scripts/bench_qwen_csr_inference.py \
-      --model-path "$CKPT" --targets "$TARGETS" $E2E \
-      --output "$RES_ROOT/e2e/$NAME-$TARGETS.json"
-done
+# v0 keeps the original file names
+impl_suffix() { [ "$1" = v0 ] && echo "" || echo "-$1"; }
 
-for MODE in prefill decode; do
-  step "$RES_ROOT/profile/$NAME-csr-all-$MODE.txt" \
-    $RUN scripts/profile_qwen.py \
-      --model "$CKPT" --csr-targets all --mode "$MODE" \
-      --output "$RES_ROOT/profile/$NAME-csr-all-$MODE.txt"
+if has_step patterns; then
+  step "$RES_ROOT/patterns/$NAME.json" \
+    $RUN scripts/analyze_sparsity_patterns.py \
+      --model-path "$CKPT" --output "$RES_ROOT/patterns/$NAME.json"
+fi
+
+if has_step layers; then
+  for MODE in $LAYER_MODES; do
+    if [ "$MODE" = cold ]; then DIR=layers_cold; COLD=--cold; else DIR=layers; COLD=""; fi
+    step "$RES_ROOT/$DIR/$NAME.json" \
+      $RUN scripts/bench_layer_formats.py \
+        --model-path "$CKPT" $LAYERS $COLD \
+        --csv "$RES_ROOT/$DIR/$NAME.csv" --output "$RES_ROOT/$DIR/$NAME.json"
+  done
+fi
+
+for IMPL in $CSR_IMPLS; do
+  SUF=$(impl_suffix "$IMPL")
+
+  if has_step e2e; then
+    for REP in $(seq "${E2E_REPS:-1}"); do
+      REP_SUF=""; [ "${E2E_REPS:-1}" -gt 1 ] && REP_SUF="-r$REP"
+      for TARGETS in mlp all; do
+        OUT="$RES_ROOT/e2e/$NAME-$TARGETS$SUF$REP_SUF.json"
+        step "$OUT" \
+          $RUN scripts/bench_qwen_csr_inference.py \
+            --model-path "$CKPT" --targets "$TARGETS" --csr-impl "$IMPL" $E2E \
+            --output "$OUT"
+      done
+    done
+  fi
+
+  if has_step profile; then
+    for MODE in prefill decode; do
+      step "$RES_ROOT/profile/$NAME-csr-all-$MODE$SUF.txt" \
+        $RUN scripts/profile_qwen.py \
+          --model "$CKPT" --csr-targets all --csr-impl "$IMPL" --mode "$MODE" \
+          --output "$RES_ROOT/profile/$NAME-csr-all-$MODE$SUF.txt"
+    done
+  fi
 done

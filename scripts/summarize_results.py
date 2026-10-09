@@ -98,6 +98,7 @@ def summarize_e2e(results):
                     "name": name_of(path),
                     **info,
                     "csr_targets": r["csr_targets"],
+                    "csr_impl": r.get("csr_impl", "v0"),
                     "csr_target_sparsity": r["csr_target_sparsity"],
                     "prompt_len": dense["prompt_len"],
                     "dense_prefill_ms": dense["prefill_ms"],
@@ -123,7 +124,11 @@ def summarize_layers(results):
     """
     rows = []
 
-    for path in sorted(glob.glob(f"{results}/layers/*.json")):
+    paths = sorted(glob.glob(f"{results}/layers/*.json")) + sorted(
+        glob.glob(f"{results}/layers_cold/*.json")
+    )
+
+    for path in paths:
         r = load(path)
         info = pruning_info(r.get("pruning"))
 
@@ -136,6 +141,7 @@ def summarize_layers(results):
                 {
                     "name": name_of(path),
                     **info,
+                    "cold": r.get("cold", False),
                     "type": layer_type,
                     "M": M,
                     "variant": variant,

@@ -18,6 +18,15 @@ export HF_DATASETS_OFFLINE=${HF_DATASETS_OFFLINE:-1}
 export OMP_NUM_THREADS=${OMP_NUM_THREADS:-16}
 export MKL_NUM_THREADS=${MKL_NUM_THREADS:-16}
 
+# PIN_THREADS=1: one OpenMP thread per core, pinned (the login environment
+# exports OMP_NUM_THREADS=1, which is overridden here).
+if [ "${PIN_THREADS:-0}" = 1 ]; then
+  export OMP_NUM_THREADS=${BIND_CPUS:-16}
+  export MKL_NUM_THREADS=${BIND_CPUS:-16}
+  export OMP_PROC_BIND=close
+  export OMP_PLACES=cores
+fi
+
 # Inside a SLURM job the allowed CPUs depend on the allocation, so pick a
 # NUMA node whose first BIND_CPUS (default 16) physical cores are all
 # allowed (falls back to the first allowed CPUs). CPU_BIND / MEM_BIND

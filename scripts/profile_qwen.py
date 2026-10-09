@@ -6,7 +6,7 @@ import torch
 from torch.profiler import profile, ProfilerActivity
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-from bench_qwen_csr_inference import TARGET_GROUPS, replace_linears_with_csr
+from bench_qwen_csr_inference import CSR_IMPLS, TARGET_GROUPS, replace_linears_with_csr
 
 
 def main():
@@ -23,6 +23,11 @@ def main():
         choices=["none", *sorted(TARGET_GROUPS)],
         default="none",
         help="Convert these Linear modules to CSR before profiling",
+    )
+    parser.add_argument(
+        "--csr-impl",
+        choices=CSR_IMPLS,
+        default="mlp_t",
     )
     parser.add_argument(
         "--mode",
@@ -58,6 +63,7 @@ def main():
         replace_linears_with_csr(
             model,
             TARGET_GROUPS[args.csr_targets],
+            args.csr_impl,
         )
 
     base_text = (
@@ -109,7 +115,7 @@ def main():
 
     print(
         f"Profiling {args.mode}, prompt length = {args.prompt_len}, "
-        f"CSR targets = {args.csr_targets}"
+        f"CSR targets = {args.csr_targets} ({args.csr_impl})"
     )
 
     with torch.inference_mode():

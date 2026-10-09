@@ -28,7 +28,11 @@ class CSRLinear(torch.nn.Module):
         [out_features, in_features]
     """
 
-    def __init__(self, linear: torch.nn.Linear):
+    def __init__(
+        self,
+        linear: torch.nn.Linear,
+        index_dtype=torch.int64,
+    ):
         super().__init__()
 
         if linear.weight.device.type != "cpu":
@@ -43,7 +47,10 @@ class CSRLinear(torch.nn.Module):
 
         self.register_buffer(
             "weight_csr",
-            weight.to_sparse_csr(),
+            to_csr(
+                weight,
+                index_dtype,
+            ),
         )
 
         if linear.bias is not None:
@@ -90,6 +97,97 @@ class CSRLinear(torch.nn.Module):
         return y2d.reshape(
             output_shape
         )
+
+
+def to_csr(
+    weight,
+    index_dtype=torch.int64,
+):
+    """
+    CSR copy of a dense weight.
+
+    torch creates int64 indices, but the oneMKL kernel used on CPU
+    (mkl_sparse_s_csr_ng_n_mm_*_i4) takes int32 indices, so with int64
+    the index arrays are converted on every call. int32 avoids that.
+    """
+
+    csr = weight.to_sparse_csr()
+
+    if index_dtype == torch.int64:
+        return csr
+
+    return torch.sparse_csr_tensor(
+        csr.crow_indices().to(index_dtype),
+        csr.col_indices().to(index_dtype),
+        csr.values(),
+        csr.shape,
+        check_invariants=False,
+    )
+
+
+class CSRMLP(torch.nn.Module):
+    """
+    Qwen2 MLP with CSR weights and a transposed dataflow:
+
+        h.T = act(W_gate @ x.T) * (W_up @ x.T)
+        y.T = W_down @ h.T
+
+    The activations stay as [features, tokens] (row-major), which lets
+    oneMKL use its row-major kernel (2-3x faster than the column-major
+    one used by CSRLinear for M > 1). The elementwise ops do not care
+    about the layout, so only the 896-wide input and output are
+    transposed, once per MLP block.
+    """
+
+    def __init__(
+        self,
+        mlp,
+        index_dtype=torch.int32,
+    ):
+        super().__init__()
+
+        self.hidden_size = mlp.gate_proj.in_features
+        self.act_fn = mlp.act_fn
+
+        for name in TARGET_SUFFIXES:
+            self.register_buffer(
+                f"{name}_csr",
+                to_csr(
+                    getattr(mlp, name).weight.detach().contiguous(),
+                    index_dtype,
+                ),
+            )
+
+    def forward(self, x):
+        original_shape = x.shape
+
+        xT = x.reshape(
+            -1,
+            self.hidden_size,
+        ).T.contiguous()
+
+        hT = self.act_fn(
+            torch.sparse.mm(self.gate_proj_csr, xT)
+        ) * torch.sparse.mm(self.up_proj_csr, xT)
+
+        yT = torch.sparse.mm(
+            self.down_proj_csr,
+            hT,
+        )
+
+        return yT.T.reshape(original_shape)
+
+
+# Implementations compared in the end-to-end benchmark:
+#   v0      CSRLinear, int64 indices (2026-10-08 sweep)
+#   int32   CSRLinear, int32 indices
+#   mlp_t   CSRMLP (int32, transposed dataflow) for the MLP blocks,
+#           CSRLinear int32 for the attention projections
+CSR_IMPLS = (
+    "v0",
+    "int32",
+    "mlp_t",
+)
 
 
 # ============================================================
@@ -162,7 +260,69 @@ def replace_mlp_linears_with_csr(
 def replace_linears_with_csr(
     model,
     suffixes,
+    impl="v0",
 ):
+    if impl not in CSR_IMPLS:
+        raise ValueError(
+            f"Unknown CSR implementation {impl}"
+        )
+
+    index_dtype = (
+        torch.int64
+        if impl == "v0"
+        else torch.int32
+    )
+
+    suffixes = tuple(suffixes)
+
+    num_mlp_modules = 0
+    mlp_weights = 0
+    mlp_zeros = 0
+
+    if impl == "mlp_t" and set(TARGET_SUFFIXES) <= set(suffixes):
+
+        mlp_names = [
+            name
+            for name, module in model.named_modules()
+            if name.startswith("model.layers.")
+            and name.endswith(".mlp")
+        ]
+
+        for name in mlp_names:
+            mlp = model.get_submodule(name)
+
+            for proj in TARGET_SUFFIXES:
+                W = getattr(mlp, proj).weight.data
+                mlp_weights += W.numel()
+                mlp_zeros += (W == 0).sum().item()
+
+            parent, child_name = get_parent_module(
+                model,
+                name,
+            )
+
+            setattr(
+                parent,
+                child_name,
+                CSRMLP(
+                    mlp,
+                    index_dtype,
+                ),
+            )
+
+            num_mlp_modules += len(TARGET_SUFFIXES)
+
+        print(
+            f"Replaced {len(mlp_names)} MLP blocks "
+            f"with transposed-dataflow CSRMLP"
+        )
+
+        suffixes = tuple(
+            x
+            for x in suffixes
+            if x not in TARGET_SUFFIXES
+        )
+
     targets = []
 
     for name, module in model.named_modules():
@@ -220,7 +380,8 @@ def replace_linears_with_csr(
         )
 
         csr_module = CSRLinear(
-            module
+            module,
+            index_dtype,
         )
 
         setattr(
@@ -234,6 +395,9 @@ def replace_linears_with_csr(
             f"{name}"
         )
 
+    total_weights += mlp_weights
+    total_zeros += mlp_zeros
+
     sparsity = (
         total_zeros
         / total_weights
@@ -246,7 +410,8 @@ def replace_linears_with_csr(
     )
 
     return (
-        len(targets),
+        len(targets)
+        + num_mlp_modules,
         sparsity,
     )
 
@@ -847,6 +1012,13 @@ def main():
     )
 
     parser.add_argument(
+        "--csr-impl",
+        choices=CSR_IMPLS,
+        default="mlp_t",
+        help="v0 = 2026-10-08 sweep (int64 indices, per-Linear)",
+    )
+
+    parser.add_argument(
         "--output",
         type=str,
         default=None,
@@ -916,6 +1088,7 @@ def main():
     ) = replace_linears_with_csr(
         csr_model,
         suffixes,
+        args.csr_impl,
     )
 
     expected = (
@@ -995,7 +1168,7 @@ def main():
     # On this 0.5B model this should fit comfortably.
 
     csr_results = benchmark_model(
-        label=f"csr-{args.targets}",
+        label=f"csr-{args.csr_impl}-{args.targets}",
         model=csr_model,
         tokenizer=tokenizer,
         prompt_lengths=
@@ -1031,6 +1204,7 @@ def main():
                 else None
             ),
             "csr_targets": args.targets,
+            "csr_impl": args.csr_impl,
             "csr_modules": num_replaced,
             "csr_target_sparsity": csr_sparsity,
             "check_max_abs": max_abs,
