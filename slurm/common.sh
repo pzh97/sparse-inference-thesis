@@ -15,7 +15,7 @@ sweep_size() {
   grep -v '^\s*#' "$SWEEP_CONFIG" | grep -cv '^\s*$'
 }
 
-# Same naming as pruning_patterns.pattern_tag():
+# Same naming as sparse_inference.masks.pattern_tag():
 #   unstructured 0.5 -> u50   2:4 -> nm2-4   block16 0.7 -> block16x16-70
 pattern_tag() {
   local pattern=$1 sparsity=$2 pct

@@ -88,7 +88,11 @@ def summarize_pruning(results):
 def summarize_e2e(results):
     rows = []
 
-    for path in sorted(glob.glob(f"{results}/e2e/*.json")):
+    paths = sorted(glob.glob(f"{results}/e2e/*.json")) + sorted(
+        glob.glob(f"{results}/e2e_lk1/*.json")
+    )
+
+    for path in paths:
         r = load(path)
         info = pruning_info(r.get("pruning"))
 
@@ -99,6 +103,8 @@ def summarize_e2e(results):
                     **info,
                     "csr_targets": r["csr_targets"],
                     "csr_impl": r.get("csr_impl", "v0"),
+                    # None: lm_head computed for every prompt token
+                    "logits_to_keep": r.get("logits_to_keep"),
                     "csr_target_sparsity": r["csr_target_sparsity"],
                     "prompt_len": dense["prompt_len"],
                     "dense_prefill_ms": dense["prefill_ms"],

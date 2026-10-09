@@ -6,6 +6,7 @@
 #   sbatch slurm/tma.sbatch
 #
 # Override the selection with CHECKPOINTS="..." LAYER=... M_VALUES="..."
+# THREADS="..." FORMATS="..." (existing runs are skipped).
 
 #SBATCH -J tma
 #SBATCH -p short
@@ -24,14 +25,16 @@ cd "$SLURM_SUBMIT_DIR"
 source slurm/common.sh
 
 if [ -n "${SMOKE:-}" ]; then
-  CKPT_ROOT="$STORE/sparse-inference/smoke/checkpoints"
-  RES_ROOT="$STORE/sparse-inference/smoke/results"
+  CKPT_ROOT="${SMOKE_ROOT:-$STORE/sparse-inference/smoke}/checkpoints"
+  RES_ROOT="${SMOKE_ROOT:-$STORE/sparse-inference/smoke}/results"
 fi
 
 CHECKPOINTS=${CHECKPOINTS:-"sparsegpt-u50 sparsegpt-u70 sparsegpt-u90 magnitude-u90 sparsegpt-nm2-4 wanda-block16x16-70"}
 LAYER=${LAYER:-model.layers.12.mlp.down_proj}
 M_VALUES=${M_VALUES:-"1 128"}
 THREADS=${THREADS:-"1 16"}
+FORMATS=${FORMATS:-"dense csr csr_rowmajor csr_i32 csr_i32_rowmajor"}
+RANDOM_FORMATS=${RANDOM_FORMATS:-"dense csr csr_i32"}
 export PERF_SECONDS=${PERF_SECONDS:-10}
 
 OUT_ROOT="$RES_ROOT/tma"
@@ -52,7 +55,7 @@ for T in $THREADS; do
   for M in $M_VALUES; do
     for CK in $CHECKPOINTS; do
       [ -d "$CKPT_ROOT/$CK" ] || { echo "missing $CK"; continue; }
-      for FMT in dense csr csr_rowmajor; do
+      for FMT in $FORMATS; do
         run "$OUT_ROOT/$CK/${LAYER##model.layers.}/t$T-m$M-$FMT" \
           --model-path "$CKPT_ROOT/$CK" --layer "$LAYER" \
           --format "$FMT" --m "$M" --threads "$T"
@@ -61,7 +64,7 @@ for T in $THREADS; do
 
     # Random-mask controls with the shape of the down_proj
     for S in 0.5 0.7 0.9; do
-      for FMT in dense csr; do
+      for FMT in $RANDOM_FORMATS; do
         run "$OUT_ROOT/random-$S/896x4864/t$T-m$M-$FMT" \
           --shape 896 4864 --sparsity "$S" \
           --format "$FMT" --m "$M" --threads "$T"

@@ -11,6 +11,8 @@
 #   CSR_IMPLS    CSR implementations for e2e/profile (v0, int32, mlp_t);
 #                v0 = the 2026-10-08 sweep, output names without suffix
 #   LAYER_MODES  "hot" and/or "cold" (cold-cache per-layer benchmark)
+#   E2E_DIR      results subdirectory for e2e (default e2e; e2e_lk1 = runs
+#                with logits_to_keep=1, i.e. after commit "lm_head fix")
 #   E2E_REPS     independent processes per e2e configuration (default 1;
 #                >1 adds -r<i> to the file names). Dense timings differ
 #                between processes (~400 vs ~505 ms prefill at 512).
@@ -35,8 +37,8 @@ cd "$SLURM_SUBMIT_DIR"
 source slurm/common.sh
 
 if [ -n "${SMOKE:-}" ]; then
-  CKPT_ROOT="$STORE/sparse-inference/smoke/checkpoints"
-  RES_ROOT="$STORE/sparse-inference/smoke/results"
+  CKPT_ROOT="${SMOKE_ROOT:-$STORE/sparse-inference/smoke}/checkpoints"
+  RES_ROOT="${SMOKE_ROOT:-$STORE/sparse-inference/smoke}/results"
   LAYERS="--layers 0 --m-values 1 128 --runs 5 --min-time 0.02"
   E2E="--prompt-lengths 128 --decode-tokens 4 --prefill-repeats 2 --decode-repeats 1"
 else
@@ -97,7 +99,7 @@ for IMPL in $CSR_IMPLS; do
     for REP in $(seq "${E2E_REPS:-1}"); do
       REP_SUF=""; [ "${E2E_REPS:-1}" -gt 1 ] && REP_SUF="-r$REP"
       for TARGETS in mlp all; do
-        OUT="$RES_ROOT/e2e/$NAME-$TARGETS$SUF$REP_SUF.json"
+        OUT="$RES_ROOT/${E2E_DIR:-e2e}/$NAME-$TARGETS$SUF$REP_SUF.json"
         step "$OUT" \
           $RUN scripts/bench_qwen_csr_inference.py \
             --model-path "$CKPT" --targets "$TARGETS" --csr-impl "$IMPL" $E2E \

@@ -18,7 +18,7 @@ import torch
 import torch.nn.functional as F
 from transformers import AutoModelForCausalLM
 
-from bench_qwen_csr_inference import make_prompt_tokens
+from sparse_inference.data import make_prompt_tokens
 
 
 def median_ms(fn, warmup, runs):

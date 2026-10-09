@@ -1,5 +1,4 @@
 import argparse
-import copy
 import os
 import statistics
 import time
@@ -7,413 +6,16 @@ import time
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-from result_io import read_json, write_json
-
-
-# ============================================================
-# CSR Linear
-# ============================================================
-
-class CSRLinear(torch.nn.Module):
-    """
-    Drop-in CPU replacement for nn.Linear using a CSR weight matrix.
-
-    Original nn.Linear:
-        y = x @ W.T + b
-
-    CSR implementation:
-        y.T = W @ x.T
-
-    Weight shape:
-        [out_features, in_features]
-    """
-
-    def __init__(
-        self,
-        linear: torch.nn.Linear,
-        index_dtype=torch.int64,
-    ):
-        super().__init__()
-
-        if linear.weight.device.type != "cpu":
-            raise ValueError(
-                "CSRLinear currently expects CPU weights."
-            )
-
-        self.in_features = linear.in_features
-        self.out_features = linear.out_features
-
-        weight = linear.weight.detach().contiguous()
-
-        self.register_buffer(
-            "weight_csr",
-            to_csr(
-                weight,
-                index_dtype,
-            ),
-        )
-
-        if linear.bias is not None:
-            self.register_buffer(
-                "bias",
-                linear.bias.detach().clone(),
-            )
-        else:
-            self.bias = None
-
-    def forward(self, x):
-        """
-        Supports x with shape:
-            [..., in_features]
-
-        Flatten all leading dimensions, perform sparse mm, then reshape.
-        """
-
-        original_shape = x.shape
-
-        x2d = x.reshape(
-            -1,
-            self.in_features,
-        )
-
-        # W: [out, in]
-        # x2d.T: [in, M]
-        #
-        # result.T:
-        # [M, out]
-        y2d = torch.sparse.mm(
-            self.weight_csr,
-            x2d.T,
-        ).T
-
-        if self.bias is not None:
-            y2d = y2d + self.bias
-
-        output_shape = (
-            *original_shape[:-1],
-            self.out_features,
-        )
-
-        return y2d.reshape(
-            output_shape
-        )
-
-
-def to_csr(
-    weight,
-    index_dtype=torch.int64,
-):
-    """
-    CSR copy of a dense weight.
-
-    torch creates int64 indices, but the oneMKL kernel used on CPU
-    (mkl_sparse_s_csr_ng_n_mm_*_i4) takes int32 indices, so with int64
-    the index arrays are converted on every call. int32 avoids that.
-    """
-
-    csr = weight.to_sparse_csr()
-
-    if index_dtype == torch.int64:
-        return csr
-
-    return torch.sparse_csr_tensor(
-        csr.crow_indices().to(index_dtype),
-        csr.col_indices().to(index_dtype),
-        csr.values(),
-        csr.shape,
-        check_invariants=False,
-    )
-
-
-class CSRMLP(torch.nn.Module):
-    """
-    Qwen2 MLP with CSR weights and a transposed dataflow:
-
-        h.T = act(W_gate @ x.T) * (W_up @ x.T)
-        y.T = W_down @ h.T
-
-    The activations stay as [features, tokens] (row-major), which lets
-    oneMKL use its row-major kernel (2-3x faster than the column-major
-    one used by CSRLinear for M > 1). The elementwise ops do not care
-    about the layout, so only the 896-wide input and output are
-    transposed, once per MLP block.
-    """
-
-    def __init__(
-        self,
-        mlp,
-        index_dtype=torch.int32,
-    ):
-        super().__init__()
-
-        self.hidden_size = mlp.gate_proj.in_features
-        self.act_fn = mlp.act_fn
-
-        for name in TARGET_SUFFIXES:
-            self.register_buffer(
-                f"{name}_csr",
-                to_csr(
-                    getattr(mlp, name).weight.detach().contiguous(),
-                    index_dtype,
-                ),
-            )
-
-    def forward(self, x):
-        original_shape = x.shape
-
-        xT = x.reshape(
-            -1,
-            self.hidden_size,
-        ).T.contiguous()
-
-        hT = self.act_fn(
-            torch.sparse.mm(self.gate_proj_csr, xT)
-        ) * torch.sparse.mm(self.up_proj_csr, xT)
-
-        yT = torch.sparse.mm(
-            self.down_proj_csr,
-            hT,
-        )
-
-        return yT.T.reshape(original_shape)
-
-
-# Implementations compared in the end-to-end benchmark:
-#   v0      CSRLinear, int64 indices (2026-10-08 sweep)
-#   int32   CSRLinear, int32 indices
-#   mlp_t   CSRMLP (int32, transposed dataflow) for the MLP blocks,
-#           CSRLinear int32 for the attention projections
-CSR_IMPLS = (
-    "v0",
-    "int32",
-    "mlp_t",
-)
-
-
-# ============================================================
-# Module replacement
-# ============================================================
-
-TARGET_SUFFIXES = (
-    "gate_proj",
-    "up_proj",
-    "down_proj",
-)
-
-TARGET_GROUPS = {
-    "mlp": TARGET_SUFFIXES,
-    "attn": (
-        "q_proj",
-        "k_proj",
-        "v_proj",
-        "o_proj",
-    ),
-}
-
-TARGET_GROUPS["all"] = (
-    TARGET_GROUPS["attn"]
-    + TARGET_GROUPS["mlp"]
-)
-
-
-def get_parent_module(
-    model,
-    module_name,
-):
-    """
-    Example:
-        module_name =
-        model.layers.0.mlp.gate_proj
-
-    returns:
-        parent = model.layers.0.mlp
-        child_name = gate_proj
-    """
-
-    parts = module_name.split(".")
-
-    parent = model
-
-    for part in parts[:-1]:
-        parent = getattr(
-            parent,
-            part,
-        )
-
-    return (
-        parent,
-        parts[-1],
-    )
-
-
-def replace_mlp_linears_with_csr(
-    model,
-):
-    num_replaced, _ = replace_linears_with_csr(
-        model,
-        TARGET_SUFFIXES,
-    )
-
-    return num_replaced
-
-
-def replace_linears_with_csr(
-    model,
-    suffixes,
-    impl="v0",
-):
-    if impl not in CSR_IMPLS:
-        raise ValueError(
-            f"Unknown CSR implementation {impl}"
-        )
-
-    index_dtype = (
-        torch.int64
-        if impl == "v0"
-        else torch.int32
-    )
-
-    suffixes = tuple(suffixes)
-
-    num_mlp_modules = 0
-    mlp_weights = 0
-    mlp_zeros = 0
-
-    if impl == "mlp_t" and set(TARGET_SUFFIXES) <= set(suffixes):
-
-        mlp_names = [
-            name
-            for name, module in model.named_modules()
-            if name.startswith("model.layers.")
-            and name.endswith(".mlp")
-        ]
-
-        for name in mlp_names:
-            mlp = model.get_submodule(name)
-
-            for proj in TARGET_SUFFIXES:
-                W = getattr(mlp, proj).weight.data
-                mlp_weights += W.numel()
-                mlp_zeros += (W == 0).sum().item()
-
-            parent, child_name = get_parent_module(
-                model,
-                name,
-            )
-
-            setattr(
-                parent,
-                child_name,
-                CSRMLP(
-                    mlp,
-                    index_dtype,
-                ),
-            )
-
-            num_mlp_modules += len(TARGET_SUFFIXES)
-
-        print(
-            f"Replaced {len(mlp_names)} MLP blocks "
-            f"with transposed-dataflow CSRMLP"
-        )
-
-        suffixes = tuple(
-            x
-            for x in suffixes
-            if x not in TARGET_SUFFIXES
-        )
-
-    targets = []
-
-    for name, module in model.named_modules():
-
-        if not isinstance(
-            module,
-            torch.nn.Linear,
-        ):
-            continue
-
-        if not name.startswith(
-            "model.layers."
-        ):
-            continue
-
-        if not name.endswith(
-            tuple(suffixes)
-        ):
-            continue
-
-        targets.append(
-            (
-                name,
-                module,
-            )
-        )
-
-    print(
-        f"Replacing {len(targets)} "
-        f"Linear modules with CSR..."
-    )
-
-    total_weights = 0
-    total_zeros = 0
-
-    for i, (
-        name,
-        module,
-    ) in enumerate(
-        targets
-    ):
-
-        W = module.weight.data
-
-        total_weights += W.numel()
-        total_zeros += (
-            W == 0
-        ).sum().item()
-
-        parent, child_name = (
-            get_parent_module(
-                model,
-                name,
-            )
-        )
-
-        csr_module = CSRLinear(
-            module,
-            index_dtype,
-        )
-
-        setattr(
-            parent,
-            child_name,
-            csr_module,
-        )
-
-        print(
-            f"[{i + 1}/{len(targets)}] "
-            f"{name}"
-        )
-
-    total_weights += mlp_weights
-    total_zeros += mlp_zeros
-
-    sparsity = (
-        total_zeros
-        / total_weights
-    )
-
-    print()
-    print(
-        f"CSR target sparsity: "
-        f"{sparsity:.4f}"
-    )
-
-    return (
-        len(targets)
-        + num_mlp_modules,
-        sparsity,
-    )
+from sparse_inference.csr import CSR_IMPLS, TARGET_GROUPS, replace_linears_with_csr
+from sparse_inference.data import make_prompt_tokens
+from sparse_inference.results import read_json, write_json
+
+
+# Prefill and decode only need the logits of the last position; computing
+# lm_head for every prompt token (the HF default) adds a dense
+# [prompt_len x 896] x [896 x 151936] matmul that is not part of real
+# inference and dilutes the CSR/dense comparison.
+LOGITS_TO_KEEP = 1
 
 
 # ============================================================
@@ -524,45 +126,6 @@ def check_prefill_correctness(
 
 
 # ============================================================
-# Prompt creation
-# ============================================================
-
-def make_prompt_tokens(
-    tokenizer,
-    prompt_len,
-):
-    """
-    Use deterministic repeated text and truncate to the requested length.
-    """
-
-    base_text = (
-        "The history of computer science and artificial intelligence "
-        "contains many important developments in algorithms, systems, "
-        "hardware, programming languages, and machine learning. "
-    )
-
-    text = (
-        base_text * 500
-    )
-
-    tokens = tokenizer(
-        text,
-        return_tensors="pt",
-        add_special_tokens=False,
-    ).input_ids
-
-    if tokens.shape[1] < prompt_len:
-        raise RuntimeError(
-            "Could not generate enough prompt tokens."
-        )
-
-    return tokens[
-        :,
-        :prompt_len
-    ]
-
-
-# ============================================================
 # Prefill benchmark
 # ============================================================
 
@@ -580,6 +143,7 @@ def benchmark_prefill(
             model(
                 input_ids=input_ids,
                 use_cache=True,
+                logits_to_keep=LOGITS_TO_KEEP,
             )
 
         times = []
@@ -593,6 +157,7 @@ def benchmark_prefill(
             model(
                 input_ids=input_ids,
                 use_cache=True,
+                logits_to_keep=LOGITS_TO_KEEP,
             )
 
             synchronize()
@@ -645,6 +210,7 @@ def decode_once(
         outputs = model(
             input_ids=input_ids,
             use_cache=True,
+            logits_to_keep=LOGITS_TO_KEEP,
         )
 
         past_key_values = (
@@ -1205,6 +771,7 @@ def main():
             ),
             "csr_targets": args.targets,
             "csr_impl": args.csr_impl,
+            "logits_to_keep": LOGITS_TO_KEEP,
             "csr_modules": num_replaced,
             "csr_target_sparsity": csr_sparsity,
             "check_max_abs": max_abs,

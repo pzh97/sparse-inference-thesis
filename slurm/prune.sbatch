@@ -23,8 +23,8 @@ cd "$SLURM_SUBMIT_DIR"
 source slurm/common.sh
 
 if [ -n "${SMOKE:-}" ]; then
-  CKPT_ROOT="$STORE/sparse-inference/smoke/checkpoints"
-  RES_ROOT="$STORE/sparse-inference/smoke/results"
+  CKPT_ROOT="${SMOKE_ROOT:-$STORE/sparse-inference/smoke}/checkpoints"
+  RES_ROOT="${SMOKE_ROOT:-$STORE/sparse-inference/smoke}/results"
   EXTRA="--max-samples 2"
   CALIB="--calib-samples 2"
 else

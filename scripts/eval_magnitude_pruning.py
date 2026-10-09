@@ -1,39 +1,13 @@
 import argparse
-import math
 import os
 
 import torch
-from datasets import load_dataset
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-from pruning_patterns import build_mask, parse_pattern, pattern_sparsity
-from result_io import model_revision, write_json
-
-
-# ---------------------------------------------------------------------
-# Target Linear modules
-# ---------------------------------------------------------------------
-
-def get_target_linears(model):
-
-    modules = {}
-
-    for name, module in model.named_modules():
-
-        if not isinstance(
-            module,
-            torch.nn.Linear,
-        ):
-            continue
-
-        if not name.startswith(
-            "model.layers."
-        ):
-            continue
-
-        modules[name] = module
-
-    return modules
+from sparse_inference.data import evaluate_ppl
+from sparse_inference.masks import build_mask, parse_pattern, pattern_sparsity
+from sparse_inference.model_utils import get_target_linears, save_model
+from sparse_inference.results import model_revision, write_json
 
 
 # ---------------------------------------------------------------------
@@ -50,7 +24,7 @@ def prune_magnitude(
 
     unstructured: exact-k pruning inside each Linear matrix so that the
     resulting sparsity is as close as possible to the requested target.
-    N:M / block: see pruning_patterns.py.
+    N:M / block: see sparse_inference/masks.py.
     """
 
     linears = get_target_linears(
@@ -128,164 +102,6 @@ def prune_magnitude(
     )
 
     return actual_sparsity
-
-
-# ---------------------------------------------------------------------
-# Save checkpoint
-# ---------------------------------------------------------------------
-
-def save_model(
-    model,
-    tokenizer,
-    save_path,
-):
-    if save_path is None:
-        return
-
-    save_path = os.path.expandvars(
-        os.path.expanduser(
-            save_path
-        )
-    )
-
-    os.makedirs(
-        save_path,
-        exist_ok=True,
-    )
-
-    print()
-    print(
-        f"Saving pruned model to "
-        f"{save_path}..."
-    )
-
-    model.save_pretrained(
-        save_path,
-        safe_serialization=True,
-    )
-
-    tokenizer.save_pretrained(
-        save_path
-    )
-
-    print("Save complete.")
-
-
-# ---------------------------------------------------------------------
-# WikiText-2 perplexity
-# ---------------------------------------------------------------------
-
-def evaluate_ppl(
-    model,
-    tokenizer,
-    seq_len,
-    max_samples=None,
-):
-    dataset = load_dataset(
-        "Salesforce/wikitext",
-        "wikitext-2-raw-v1",
-        split="test",
-    )
-
-    text = "\n\n".join(
-        dataset["text"]
-    )
-
-    tokens = tokenizer(
-        text,
-        return_tensors="pt",
-        add_special_tokens=False,
-        verbose=False,
-    ).input_ids
-
-    num_chunks = (
-        tokens.shape[1]
-        // seq_len
-    )
-
-    if max_samples is not None:
-        num_chunks = min(
-            num_chunks,
-            max_samples,
-        )
-
-    print()
-    print(
-        f"Evaluating "
-        f"{num_chunks} chunks..."
-    )
-
-    total_nll = 0.0
-    total_target_tokens = 0
-
-    model.eval()
-
-    with torch.inference_mode():
-
-        for i in range(num_chunks):
-
-            start = (
-                i * seq_len
-            )
-
-            batch = tokens[
-                :,
-                start:start + seq_len
-            ]
-
-            outputs = model(
-                input_ids=batch,
-                labels=batch,
-                use_cache=False,
-            )
-
-            valid_tokens = (
-                batch.numel()
-                - 1
-            )
-
-            total_nll += (
-                outputs.loss.item()
-                * valid_tokens
-            )
-
-            total_target_tokens += (
-                valid_tokens
-            )
-
-            if (
-                (i + 1) % 20 == 0
-                or
-                i + 1 == num_chunks
-            ):
-
-                running_ppl = math.exp(
-                    total_nll
-                    / total_target_tokens
-                )
-
-                print(
-                    f"[{i + 1}/"
-                    f"{num_chunks}] "
-                    f"running PPL = "
-                    f"{running_ppl:.4f}"
-                )
-
-    mean_nll = (
-        total_nll
-        / total_target_tokens
-    )
-
-    ppl = math.exp(
-        mean_nll
-    )
-
-    return (
-        mean_nll,
-        ppl,
-        num_chunks,
-        total_target_tokens,
-    )
 
 
 # ---------------------------------------------------------------------

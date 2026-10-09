@@ -4,7 +4,10 @@ module load singularity/4.2.2
 
 export SINGULARITY_CACHEDIR="$STORE/sparse-inference/singularity-cache"
 
-export PYTHONPATH="$STORE/sparse-inference/pydeps:${PYTHONPATH:-}"
+REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# src/ holds the shared sparse_inference package
+export PYTHONPATH="$REPO_DIR/src:$STORE/sparse-inference/pydeps:${PYTHONPATH:-}"
 
 export HF_HOME="$STORE/sparse-inference/huggingface"
 export HF_HUB_CACHE="$HF_HOME/hub"

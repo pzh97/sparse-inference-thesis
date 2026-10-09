@@ -23,6 +23,8 @@ import time
 import torch
 import torch.nn.functional as F
 
+from sparse_inference.csr import to_csr
+
 
 def load_weight(args):
     if args.model_path is not None:
@@ -64,7 +66,7 @@ def main():
     parser.add_argument("--sparsity", type=float, default=0.9)
     parser.add_argument(
         "--format",
-        choices=["dense", "csr", "csr_rowmajor"],
+        choices=["dense", "csr", "csr_rowmajor", "csr_i32", "csr_i32_rowmajor"],
         required=True,
     )
     parser.add_argument("--m", type=int, default=128)
@@ -83,14 +85,17 @@ def main():
 
     x = torch.randn(args.m, k)
     xT = x.T.contiguous()
-    W_csr = W.to_sparse_csr()
+    W_csr = to_csr(
+        W,
+        torch.int32 if args.format.startswith("csr_i32") else torch.int64,
+    )
 
     if args.format == "dense":
         fn = lambda: F.linear(x, W)
-    elif args.format == "csr":
-        fn = lambda: torch.sparse.mm(W_csr, x.T).T
-    else:
+    elif args.format.endswith("rowmajor"):
         fn = lambda: torch.sparse.mm(W_csr, xT)
+    else:
+        fn = lambda: torch.sparse.mm(W_csr, x.T).T
 
     sparsity = 1.0 - (W != 0).sum().item() / W.numel()
 

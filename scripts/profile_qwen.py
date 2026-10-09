@@ -6,7 +6,7 @@ import torch
 from torch.profiler import profile, ProfilerActivity
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-from bench_qwen_csr_inference import CSR_IMPLS, TARGET_GROUPS, replace_linears_with_csr
+from sparse_inference.csr import CSR_IMPLS, TARGET_GROUPS, replace_linears_with_csr
 
 
 def main():
@@ -88,9 +88,11 @@ def main():
     input_ids = input_ids[:, :args.prompt_len]
 
     def run_prefill():
+        # Only the last position's logits, as in real inference.
         return model(
             input_ids=input_ids,
             use_cache=args.mode == "decode",
+            logits_to_keep=1,
         )
 
     def run_decode(outputs):

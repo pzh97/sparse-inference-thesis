@@ -1,11 +1,10 @@
 import argparse
-import math
-import torch
 
-from datasets import load_dataset
+import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-from result_io import model_revision, write_json
+from sparse_inference.data import evaluate_ppl
+from sparse_inference.results import model_revision, write_json
 
 
 def main():
@@ -51,73 +50,14 @@ def main():
         args.model,
         dtype=torch.float32,
     )
-
     model.eval()
 
-    print("Loading WikiText-2...")
-    dataset = load_dataset(
-        "Salesforce/wikitext",
-        "wikitext-2-raw-v1",
-        split="test",
+    mean_nll, ppl, num_chunks, total_target_tokens = evaluate_ppl(
+        model,
+        tokenizer,
+        args.seq_len,
+        args.max_samples,
     )
-
-    text = "\n\n".join(dataset["text"])
-
-    print("Tokenizing...")
-    encodings = tokenizer(
-        text,
-        return_tensors="pt",
-        add_special_tokens=False,
-    )
-
-    input_ids = encodings.input_ids
-
-    print(f"Total tokens: {input_ids.numel():,}")
-    print(f"Sequence length: {args.seq_len}")
-
-    nlls = []
-    total_target_tokens = 0
-
-    num_chunks = input_ids.size(1) // args.seq_len
-
-    if args.max_samples is not None:
-        num_chunks = min(num_chunks, args.max_samples)
-
-    print(f"Evaluating {num_chunks} chunks...")
-
-    with torch.no_grad():
-        for i in range(num_chunks):
-            start = i * args.seq_len
-            end = start + args.seq_len
-
-            batch = input_ids[:, start:end]
-
-            outputs = model(
-                input_ids=batch,
-                labels=batch,
-                use_cache=False,
-            )
-
-            # Hugging Face causal LM loss is mean cross-entropy
-            # over predicted tokens in this chunk.
-            valid_tokens = batch.numel() - 1
-
-            nlls.append(outputs.loss.item() * valid_tokens)
-            total_target_tokens += valid_tokens
-
-            if (i + 1) % 20 == 0:
-                current_nll = sum(nlls)
-                current_ppl = math.exp(
-                    current_nll / total_target_tokens
-                )
-
-                print(
-                    f"[{i + 1}/{num_chunks}] "
-                    f"running PPL = {current_ppl:.4f}"
-                )
-
-    mean_nll = sum(nlls) / total_target_tokens
-    ppl = math.exp(mean_nll)
 
     print()
     print("===== Result =====")

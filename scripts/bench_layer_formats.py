@@ -37,9 +37,9 @@ import torch
 import torch.nn.functional as F
 from transformers import AutoModelForCausalLM
 
-from analyze_sparsity_patterns import analyze_matrix, layer_type_from_name
-from bench_qwen_csr_inference import to_csr
-from result_io import read_json, write_json
+from sparse_inference.csr import to_csr
+from sparse_inference.pattern_stats import analyze_matrix, layer_type_from_name
+from sparse_inference.results import read_json, write_json
 
 
 def time_fn(fn, warmup, runs, min_time_s):
