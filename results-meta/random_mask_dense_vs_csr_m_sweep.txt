@@ -1,0 +1,350 @@
+===== M 1 | SPARSITY 0.70 =====
+Sparsity requested: 0.70
+Sparsity actual:    0.7001
+NNZ:                1307065
+Correct:            True
+Max abs error:      3.43322754e-05
+Relative L2 error:  3.09404811e-07
+
+Dense median ms:    0.0387
+Dense mean ms:      0.0390
+CSR median ms:      0.1730
+CSR mean ms:        0.1739
+CSR speedup:        0.224x
+
+===== M 1 | SPARSITY 0.80 =====
+Sparsity requested: 0.80
+Sparsity actual:    0.8000
+NNZ:                871558
+Correct:            True
+Max abs error:      2.67028809e-05
+Relative L2 error:  2.44051336e-07
+
+Dense median ms:    0.0374
+Dense mean ms:      0.0377
+CSR median ms:      0.1142
+CSR mean ms:        0.1147
+CSR speedup:        0.328x
+
+===== M 1 | SPARSITY 0.85 =====
+Sparsity requested: 0.85
+Sparsity actual:    0.8500
+NNZ:                653870
+Correct:            True
+Max abs error:      1.90734863e-05
+Relative L2 error:  2.19443123e-07
+
+Dense median ms:    0.0378
+Dense mean ms:      0.0381
+CSR median ms:      0.0885
+CSR mean ms:        0.0889
+CSR speedup:        0.427x
+
+===== M 1 | SPARSITY 0.90 =====
+Sparsity requested: 0.90
+Sparsity actual:    0.9001
+NNZ:                435570
+Correct:            True
+Max abs error:      9.53674316e-06
+Relative L2 error:  1.82738603e-07
+
+Dense median ms:    0.0379
+Dense mean ms:      0.0381
+CSR median ms:      0.0652
+CSR mean ms:        0.0655
+CSR speedup:        0.582x
+
+===== M 1 | SPARSITY 0.95 =====
+Sparsity requested: 0.95
+Sparsity actual:    0.9500
+NNZ:                217994
+Correct:            True
+Max abs error:      7.62939453e-06
+Relative L2 error:  1.37985523e-07
+
+Dense median ms:    0.0378
+Dense mean ms:      0.0380
+CSR median ms:      0.0494
+CSR mean ms:        0.0508
+CSR speedup:        0.765x
+
+===== M 8 | SPARSITY 0.70 =====
+Sparsity requested: 0.70
+Sparsity actual:    0.7001
+NNZ:                1307022
+Correct:            True
+Max abs error:      3.05175781e-05
+Relative L2 error:  2.33452283e-07
+
+Dense median ms:    0.0617
+Dense mean ms:      0.0621
+CSR median ms:      0.1499
+CSR mean ms:        0.1509
+CSR speedup:        0.412x
+
+===== M 8 | SPARSITY 0.80 =====
+Sparsity requested: 0.80
+Sparsity actual:    0.8000
+NNZ:                871526
+Correct:            True
+Max abs error:      2.67028809e-05
+Relative L2 error:  1.97304018e-07
+
+Dense median ms:    0.0610
+Dense mean ms:      0.0614
+CSR median ms:      0.1107
+CSR mean ms:        0.1114
+CSR speedup:        0.551x
+
+===== M 8 | SPARSITY 0.85 =====
+Sparsity requested: 0.85
+Sparsity actual:    0.8500
+NNZ:                653876
+Correct:            True
+Max abs error:      1.52587891e-05
+Relative L2 error:  1.76514902e-07
+
+Dense median ms:    0.0621
+Dense mean ms:      0.0626
+CSR median ms:      0.0886
+CSR mean ms:        0.0888
+CSR speedup:        0.701x
+
+===== M 8 | SPARSITY 0.90 =====
+Sparsity requested: 0.90
+Sparsity actual:    0.9001
+NNZ:                435573
+Correct:            True
+Max abs error:      1.14440918e-05
+Relative L2 error:  1.51075682e-07
+
+Dense median ms:    0.0548
+Dense mean ms:      0.0556
+CSR median ms:      0.0802
+CSR mean ms:        0.0806
+CSR speedup:        0.684x
+
+===== M 8 | SPARSITY 0.95 =====
+Sparsity requested: 0.95
+Sparsity actual:    0.9500
+NNZ:                217997
+Correct:            True
+Max abs error:      5.72204590e-06
+Relative L2 error:  1.17983255e-07
+
+Dense median ms:    0.0534
+Dense mean ms:      0.0538
+CSR median ms:      0.0721
+CSR mean ms:        0.0724
+CSR speedup:        0.740x
+
+===== M 32 | SPARSITY 0.70 =====
+Sparsity requested: 0.70
+Sparsity actual:    0.7001
+NNZ:                1306900
+Correct:            True
+Max abs error:      5.34057617e-05
+Relative L2 error:  2.88387440e-07
+
+Dense median ms:    0.4555
+Dense mean ms:      0.4572
+CSR median ms:      0.3087
+CSR mean ms:        0.3080
+CSR speedup:        1.476x
+
+===== M 32 | SPARSITY 0.80 =====
+Sparsity requested: 0.80
+Sparsity actual:    0.8000
+NNZ:                871441
+Correct:            True
+Max abs error:      3.81469727e-05
+Relative L2 error:  2.36281224e-07
+
+Dense median ms:    0.4552
+Dense mean ms:      0.4568
+CSR median ms:      0.2220
+CSR mean ms:        0.2228
+CSR speedup:        2.051x
+
+===== M 32 | SPARSITY 0.85 =====
+Sparsity requested: 0.85
+Sparsity actual:    0.8500
+NNZ:                653839
+Correct:            True
+Max abs error:      2.67028809e-05
+Relative L2 error:  2.06518266e-07
+
+Dense median ms:    0.4555
+Dense mean ms:      0.4571
+CSR median ms:      0.1875
+CSR mean ms:        0.1884
+CSR speedup:        2.430x
+
+===== M 32 | SPARSITY 0.90 =====
+Sparsity requested: 0.90
+Sparsity actual:    0.9001
+NNZ:                435532
+Correct:            True
+Max abs error:      1.52587891e-05
+Relative L2 error:  1.70940694e-07
+
+Dense median ms:    0.4560
+Dense mean ms:      0.4577
+CSR median ms:      0.1555
+CSR mean ms:        0.1565
+CSR speedup:        2.933x
+
+===== M 32 | SPARSITY 0.95 =====
+Sparsity requested: 0.95
+Sparsity actual:    0.9500
+NNZ:                217988
+Correct:            True
+Max abs error:      7.62939453e-06
+Relative L2 error:  1.23663028e-07
+
+Dense median ms:    0.4547
+Dense mean ms:      0.4564
+CSR median ms:      0.1295
+CSR mean ms:        0.1299
+CSR speedup:        3.512x
+
+===== M 128 | SPARSITY 0.70 =====
+Sparsity requested: 0.70
+Sparsity actual:    0.7001
+NNZ:                1306948
+Correct:            True
+Max abs error:      5.34057617e-05
+Relative L2 error:  2.88956215e-07
+
+Dense median ms:    0.7643
+Dense mean ms:      0.7655
+CSR median ms:      1.0129
+CSR mean ms:        1.0488
+CSR speedup:        0.755x
+
+===== M 128 | SPARSITY 0.80 =====
+Sparsity requested: 0.80
+Sparsity actual:    0.8000
+NNZ:                871557
+Correct:            True
+Max abs error:      3.81469727e-05
+Relative L2 error:  2.37457087e-07
+
+Dense median ms:    0.7657
+Dense mean ms:      0.7662
+CSR median ms:      0.8877
+CSR mean ms:        0.8475
+CSR speedup:        0.862x
+
+===== M 128 | SPARSITY 0.85 =====
+Sparsity requested: 0.85
+Sparsity actual:    0.8499
+NNZ:                653941
+Correct:            True
+Max abs error:      3.81469727e-05
+Relative L2 error:  2.07116045e-07
+
+Dense median ms:    0.7651
+Dense mean ms:      0.7638
+CSR median ms:      0.5989
+CSR mean ms:        0.5990
+CSR speedup:        1.277x
+
+===== M 128 | SPARSITY 0.90 =====
+Sparsity requested: 0.90
+Sparsity actual:    0.9000
+NNZ:                435614
+Correct:            True
+Max abs error:      1.90734863e-05
+Relative L2 error:  1.70741671e-07
+
+Dense median ms:    0.7633
+Dense mean ms:      0.7628
+CSR median ms:      0.4584
+CSR mean ms:        0.4585
+CSR speedup:        1.665x
+
+===== M 128 | SPARSITY 0.95 =====
+Sparsity requested: 0.95
+Sparsity actual:    0.9500
+NNZ:                218057
+Correct:            True
+Max abs error:      1.14440918e-05
+Relative L2 error:  1.24897525e-07
+
+Dense median ms:    0.7613
+Dense mean ms:      0.7613
+CSR median ms:      0.3384
+CSR mean ms:        0.3390
+CSR speedup:        2.250x
+
+===== M 512 | SPARSITY 0.70 =====
+Sparsity requested: 0.70
+Sparsity actual:    0.7003
+NNZ:                1306344
+Correct:            True
+Max abs error:      5.34057617e-05
+Relative L2 error:  2.89035512e-07
+
+Dense median ms:    2.2415
+Dense mean ms:      2.2418
+CSR median ms:      4.8504
+CSR mean ms:        4.8655
+CSR speedup:        0.462x
+
+===== M 512 | SPARSITY 0.80 =====
+Sparsity requested: 0.80
+Sparsity actual:    0.8002
+NNZ:                870941
+Correct:            True
+Max abs error:      4.38690186e-05
+Relative L2 error:  2.37240528e-07
+
+Dense median ms:    2.2290
+Dense mean ms:      2.2300
+CSR median ms:      3.8096
+CSR mean ms:        3.8122
+CSR speedup:        0.585x
+
+===== M 512 | SPARSITY 0.85 =====
+Sparsity requested: 0.85
+Sparsity actual:    0.8500
+NNZ:                653693
+Correct:            True
+Max abs error:      3.81469727e-05
+Relative L2 error:  2.07059074e-07
+
+Dense median ms:    2.2229
+Dense mean ms:      2.2258
+CSR median ms:      3.1955
+CSR mean ms:        3.2016
+CSR speedup:        0.696x
+
+===== M 512 | SPARSITY 0.90 =====
+Sparsity requested: 0.90
+Sparsity actual:    0.9001
+NNZ:                435582
+Correct:            True
+Max abs error:      2.28881836e-05
+Relative L2 error:  1.70753296e-07
+
+Dense median ms:    2.2378
+Dense mean ms:      2.2380
+CSR median ms:      2.4658
+CSR mean ms:        2.4704
+CSR speedup:        0.908x
+
+===== M 512 | SPARSITY 0.95 =====
+Sparsity requested: 0.95
+Sparsity actual:    0.9500
+NNZ:                218001
+Correct:            True
+Max abs error:      1.14440918e-05
+Relative L2 error:  1.24491336e-07
+
+Dense median ms:    2.2389
+Dense mean ms:      2.2420
+CSR median ms:      1.7228
+CSR mean ms:        1.7229
+CSR speedup:        1.300x
+

@@ -1,0 +1,51 @@
+# method      pattern        sparsity   (sparsity is ignored for N:M)
+#
+# One line per pruned checkpoint. Index = SLURM array task id
+# (comments and blank lines are skipped).
+
+dense         -              0.0
+
+# Unstructured sparsity sweep
+magnitude     unstructured   0.3
+magnitude     unstructured   0.5
+magnitude     unstructured   0.6
+magnitude     unstructured   0.7
+magnitude     unstructured   0.8
+magnitude     unstructured   0.9
+wanda         unstructured   0.3
+wanda         unstructured   0.5
+wanda         unstructured   0.6
+wanda         unstructured   0.7
+wanda         unstructured   0.8
+wanda         unstructured   0.9
+sparsegpt     unstructured   0.3
+sparsegpt     unstructured   0.5
+sparsegpt     unstructured   0.6
+sparsegpt     unstructured   0.7
+sparsegpt     unstructured   0.8
+sparsegpt     unstructured   0.9
+
+# N:M (2:4 has native hardware support on Ampere+ GPUs)
+magnitude     2:4            -
+magnitude     4:8            -
+magnitude     1:4            -
+wanda         2:4            -
+wanda         4:8            -
+wanda         1:4            -
+sparsegpt     2:4            -
+sparsegpt     4:8            -
+sparsegpt     1:4            -
+
+# Block sparsity (whole RxC blocks removed; SparseGPT has no block mode)
+magnitude     block4         0.5
+magnitude     block4         0.7
+magnitude     block4         0.9
+magnitude     block16        0.5
+magnitude     block16        0.7
+magnitude     block16        0.9
+wanda         block4         0.5
+wanda         block4         0.7
+wanda         block4         0.9
+wanda         block16        0.5
+wanda         block16        0.7
+wanda         block16        0.9

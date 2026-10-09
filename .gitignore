@@ -10,3 +10,4 @@ checkpoints/
 huggingface/
 containers/
 results/
+slurm-logs/
