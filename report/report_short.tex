@@ -2,12 +2,20 @@
 
 \usepackage[T1]{fontenc}
 \usepackage{mathptmx}
-\usepackage[margin=2.5cm]{geometry}
+\usepackage[margin=2.2cm]{geometry}
 \usepackage{microtype}
+\usepackage{graphicx}
+\usepackage{caption}
+\captionsetup{font=small,labelfont=bf}
 
 \setlength{\parskip}{0.5em}
 \setlength{\parindent}{0pt}
 \pagestyle{empty}
+\renewcommand{\topfraction}{0.9}
+\renewcommand{\bottomfraction}{0.8}
+\renewcommand{\textfraction}{0.1}
+\renewcommand{\floatpagefraction}{0.8}
+\setcounter{totalnumber}{4}
 
 \begin{document}
 
@@ -60,20 +68,41 @@ dense and CSR in the same process and take the median of three runs.
 becomes faster than dense at about 70\% sparsity and is 1.4 times faster at
 90\%. Processing a prompt of 128 tokens needs about 80\% sparsity to break
 even, and a prompt of 512 tokens is still slower with CSR even at 90\%
-(0.86 times the dense speed). This gives the main finding: the sparsity
+(0.86 times the dense speed). Figure~\ref{fig:gap} shows this next to the quality results, and gives
+the main finding: the sparsity
 where the model is still good (up to 50--60\%) and the sparsity where CSR
 is faster (70\% and more) do not overlap. At 50\% sparsity CSR decoding
 runs at only 0.82 times the dense speed. The gain is also limited because
 the output layer, about a quarter of the model, stays dense.
 
+\begin{figure}[!htb]
+\centering
+\includegraphics[width=0.78\linewidth]{figures/quality_speed.pdf}
+\caption{(a) Perplexity against sparsity. (b) Speed of CSR relative to
+dense for the SparseGPT models, with the MLP layers in CSR. Above the
+dashed line CSR is faster. The shaded range is where the model keeps less
+than twice the dense perplexity.}
+\label{fig:gap}
+\end{figure}
+
 \textbf{The role of the batch size.} Measuring single layers showed that
 the number of rows in the activation matrix (one row when decoding, many
-rows when processing a prompt) matters as much as the sparsity. With few
+rows when processing a prompt) matters as much as the sparsity. Figure~\ref{fig:rows} shows this for single layers. With few
 rows (8 to 32) CSR is already faster than dense at 50\% sparsity, but with
 512 rows it needs about 85\%, because dense code reuses each weight much
 better when there are many rows. I also learned that single-layer
 benchmarks must use a cold cache: one layer fits into the 48\,MB L3 cache,
 which makes dense look much better than it is in the full model.
+
+\begin{figure}[!htb]
+\centering
+\includegraphics[width=0.85\linewidth]{figures/layers_cold.pdf}
+\caption{Speed of CSR relative to dense for single layers with a cold
+cache, for different numbers of activation rows $M$ ($M=1$ is decoding).
+Left: activations in their normal layout. Right: transposed activations,
+which let oneMKL use its faster kernel.}
+\label{fig:rows}
+\end{figure}
 
 \textbf{The role of the sparsity pattern.} At the same sparsity, the
 pattern of the zeros makes almost no difference to CSR. Unstructured, 2:4,
