@@ -3,3 +3,8 @@ report.log
 report.out
 report.fls
 report.fdb_latexmk
+report_short.aux
+report_short.log
+report_short.out
+report_short.fls
+report_short.fdb_latexmk
