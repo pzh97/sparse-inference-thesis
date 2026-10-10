@@ -48,7 +48,6 @@ configs/prune_sweep.txt     one line per pruned checkpoint (method, pattern, spa
 src/sparse_inference/       shared code (results, masks, data/PPL, CSR modules, pattern stats)
 scripts/                    experiment scripts (run through run_cpu_benchmark.sh,
                             which puts src/ on PYTHONPATH)
-scripts/exploration/        early one-off scripts
 slurm/                      batch jobs for the sweep
 results-meta/               small summary tables (committed)
 report/                     first-iteration report (LaTeX) and its figures
@@ -101,7 +100,6 @@ Every step skips outputs that already exist (`FORCE=1` to redo).
 | `check_timing_stability.py` | dense timing in fresh processes (`slurm/stability.sbatch`) |
 | `profile_qwen.py` | PyTorch profiler, dense or CSR, prefill or decode |
 | `run_tma.sh` + `tma_kernel.py` + `tma_report.py` | Top-down analysis of a single kernel in steady state |
-| `exploration/bench_dense_vs_csr.py` | random-mask microbenchmark (results in `results-meta/random_mask_dense_vs_csr_m_sweep.txt`) |
 
 ## Measurement notes
 
